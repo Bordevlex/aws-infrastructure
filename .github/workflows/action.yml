@@ -1,0 +1,111 @@
+name: Deploy environment
+
+on:
+  workflow_call:
+    inputs:
+      AWS_REGION:
+        required: true
+        type: string
+      APP_HOST:
+        required: false
+        type: string
+      APP_NAMESPACE:
+        required: false
+        type: string
+      PLAYBOOK:
+        required: false
+        type: string
+      NAME_CLUSTERISSUER:
+        required: false
+        type: string
+      NAME_CERTIFICATE:
+        required: false
+        type: string
+      USER_EMAIL:
+        required: false
+        type: string
+      ANSIBLE_CONFIG:
+        required: true
+        type: string
+      CHART_PATH:
+        required: false
+        type: string
+      CLUSTERISSUER_NAME:
+        required: false
+        type: string
+        default: 'clusterissuer'
+    secrets:
+      DB_HOST:
+        required: false
+      DB_NAME:
+        required: false
+      DB_USER:
+        required: false
+      DB_PASSWORD:
+        required: false
+      DB_PORT:
+        required: false
+      USER_NAME:
+        required: false
+      USER_PASSWORD:
+        required: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      working-directory: ${{ github.workspace }}/ansible
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible
+          pip install kubernetes
+          pip install passlib
+
+      - name: Install kubernetes.core collection
+        run: |
+          ansible-galaxy collection install kubernetes.core
+          ansible-galaxy collection install community.general
+
+      - name: Configure AWS Credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::975050337330:role/terraform
+          role-session-name: samplerolesession
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Kubeconfig setup
+        run: |
+          aws eks update-kubeconfig --name k8s --region ${{ inputs.AWS_REGION }}
+
+      - name: Run Ansible playbook
+        env:
+          KUBECONFIG: '/home/runner/.kube/config'
+          APP_HOST: ${{ inputs.APP_HOST }}
+          APP_NAMESPACE: ${{ inputs.APP_NAMESPACE }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          USER_NAME: ${{ secrets.USER_NAME }}
+          USER_PASSWORD: ${{ secrets.USER_PASSWORD }}
+          NAME_CLUSTERISSUER: ${{ inputs.NAME_CLUSTERISSUER }}
+          NAME_CERTIFICATE: ${{ inputs.NAME_CERTIFICATE }}
+          USER_EMAIL: ${{ inputs.USER_EMAIL }}
+          ANSIBLE_CONFIG: ${{ inputs.ANSIBLE_CONFIG }}
+          CHART_PATH: ${{ inputs.CHART_PATH }}
+          CLUSTERISSUER_NAME: ${{ inputs.CLUSTERISSUER_NAME }}
+        run: |
+          kubectl cluster-info
+          ansible-playbook ${{ github.workspace }}/ansible/playbooks/${{ inputs.PLAYBOOK }}
